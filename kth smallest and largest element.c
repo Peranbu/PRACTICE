@@ -37,7 +37,7 @@ printf("invalid input");
 }
 else
 {
-  bubblesort(arr,n);
+  bubblesort(arr,n); //should be same as the 4th line
   //for smallest number
 printf("the %dth smallest element is:%d\n",k,arr[k-1]);
   // if you want print largest element else ignore
