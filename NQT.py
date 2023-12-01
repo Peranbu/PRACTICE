@@ -84,5 +84,3 @@ for num_str in arr_str:
     arr.append(num)
 for i in sorted(arr):
     print(i,end="  ")
-
-  
