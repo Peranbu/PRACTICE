@@ -1,3 +1,6 @@
+# prime number = Non composite number
+# Non prime number = composite number
+
 def is_prime(num):
   if num<2:
     return False
