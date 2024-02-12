@@ -1,0 +1,84 @@
+<td> </td>--Table cells
+<tr> </tr>--Table rows
+<th> </th>--Table Headers
+
+----Basic Structure----
+<!DOCTYPE html>
+<html>
+  <body>
+    <table>
+      <tr>
+        <th> 1 </th>
+        <th> 2 </th>
+      </tr>
+      <tr>
+        <td> one </td>
+        <td> two </td>
+      </tr>
+      <tr>
+        <td> three </td>
+        <td> four </td>
+      </tr>
+    </table>
+  </body>
+</html>
+----basic structure----
+
+<head>
+  <style>
+    table,
+    th,
+    td{
+      border:2px solid black;   --- add seperate borders
+      border-collapse:collapse;   --- combine all order(Whole table)
+    }
+  </style>
+</head>
+<body>
+  <table style="width:100%">
+    <tr> </tr> <th> </th> <td> </td>
+  </table>
+</body>
+
+<br>
+
+<style>
+  th,
+  td{
+    text-align:left;  ---- text alignation
+  }
+  th,
+  td{
+    padding : 20px;   ----Spacing
+</style>
+<body>
+  <table style="width:100%">
+  </table>
+</body>
+
+<hr>
+
+<body>
+  <table>
+    <tr>
+      <th> Name </th>
+      <th colspan="2"> Telephone </th> ------ Colspan used to combine 
+      <th rowspan="2"> INDIA </th>  -----rowspan used to combine 
+    </tr>
+  </table>
+</body>
+
+<hr>
+
+<table>
+  <style>
+    table#t{
+      width:100%;
+      background-color:#ff0000
+  </style>
+</table>
+<body>
+  <table id=t>
+    <th> </th> <tr> </tr> <td> </td>
+  </table>
+</body>
