@@ -1,13 +1,9 @@
-def duplicate_numbers(arr):
-  if len(arr)==0:
-    return []
-  else:
-    result=[arr[0]]
-    for i in range(1,len(nums)):
-      if arr[i]!=arr[i-1]:
-         result.append(arr[i])
-    return result
+#remove duplicate numbers
+def remove_duplicate(numbers):
+  unique_elements=list(set(numbers))
+  return unique_elements
 
-array = [15, 14, 15, 23, 24, 26, 26, 45, 54, 45]
-sorted_arr = sorted(array)
-print("array =", duplicate_numbers(sorted_arr))
+input_num=input(" ").split()
+input_num=[int(num) for num in input_num]
+result=remove_duplicate(input_num)
+print(" ",result)
