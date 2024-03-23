@@ -1,3 +1,6 @@
+SQL == Structured Query Language
+
+
 Select titles//s.no//age
 from movies  
 
@@ -12,5 +15,8 @@ rows == records  ||  no.of.rows/records=5(include header)
 column == fields ||  no of columns/fields==3
 
 fields=s.no,titles,age
+
+
+query == to access only the required data
 
 
