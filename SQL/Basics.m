@@ -7,7 +7,7 @@ bigger commands to understand
 bla 
 bla 
 bla
-/*
+*/
 
 
 Select titles//s.no//age
