@@ -91,8 +91,33 @@ FROM desserts
 WHERE name like '%chocolate%'
 
 
+Patterns are case-sensitive. 
+LOWER() and UPPER() commands are used to convert strings to lower or uppercase.
+SELECT LOWER(title)
+FROM movies;
+SELECT UPPER(title)
+FROM movies;
 
 
+
+__ - SINGLE CHARACTER
+% - MULTIPLE CHARACTER
+Which product codes match the pattern 'A_B_' == A4B7 
+
+
+
+Complete the query to extract tweets that contain the hashtag '#DigitalMarketing'
+SELECT *
+FROM tweets
+WHERE content
+LIKE'%#DigitalMarketing%'
+
+
+COUNT()
+MAX()
+MIN()
+SUM()
+AVG()
 
 
 
