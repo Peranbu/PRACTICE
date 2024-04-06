@@ -120,4 +120,18 @@ SUM()
 AVG()
 
 
+Data grouping is a powerful tool when working with large datasets. 
+Grouping allows you to collect and see data in a new way, to answer more complex questions.
 
+
+SELECT genre, AVG(budget)   3rd
+FROM movies
+WHERE budget > 50   1st
+GROUP BY genre;      2nd
+
+
+
+SELECT genre, AVG(budget)         --  to generate the output who has avg more
+FROM movies
+GROUP BY genre
+HAVING AVG(budget) > 50;
