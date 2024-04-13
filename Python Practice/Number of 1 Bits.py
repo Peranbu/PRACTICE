@@ -5,5 +5,5 @@ def bit(n):
     set_bit+=1
   return set_bit
 
-n=input(" ")
+n=int(input(" "))
 print(bit(n))
