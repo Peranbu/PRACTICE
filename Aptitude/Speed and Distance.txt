@@ -1,0 +1,45 @@
+1. A boy runs 200 metres in 24 seconds. What is his speed ?
+Explanation : 200/24 * 18/5 = 30 km/hr      -----> 18/5 used to convert minutes into hours and 5/18 convert hours into minutes
+
+2.If the speed of a man is 45 km per hour, then what is the distance traveled by him in 30 seconds ?
+Explanation :The distance traveled in 30 sec = 45*(5/18) *30 =375m
+
+3.An escalator moves towards the top level at the rate of 11 ft.sec and its length is 140 feet. 
+If a person walks on the moving escalator at the rate of 3 feet per second towards the top level, how much time
+does he take to cover the entire length.
+Explanation : Time taken to cover the entire length = total.distance/resultant speed = 140/(11+3) = 10sec
+
+4.Two trains, 250 metres and 150 metres long respectively, are running on parallel lines.If they are
+  running in the same directions, the faster train crosses the slower train in 40 seconds.If they are
+  moving in the opposite direction they pass each other in eight seconds. What is the speed of the slower
+  train?
+Answer:  Note
+
+5.With out any halt a train  travels a certain distance with an average speed of 75 km ph , and with halts
+  it covers the same distance at an average speed of 60 kmph. When it is traveling with halts, how many
+  minutes/per hour does the train halt on an average ?
+Explanation:it take 60/75 = 4/5 = 48 minutes. 12 minutes is the halting time per hour
+
+6.A lady starts from P towards Q and realizes that at a point R, if he walks 50 km further he will be at a
+  point S, which is as far away from R as it is from Q. What is the distance between P and Q if the distance
+  between P and R is half the distance from R to Q?( Assume that P, Q, R and S are all on the same
+  straight line)
+Explanation:Expl :    P_____50_____ R ______50_______S______50_____Q 
+
+7.In a 1000 m race Usha beats Shiny by 5 m/s. In the same race, by what time margin Shiny beat Mercy
+  who runs at 4 m/s?
+Explanation:Time taken by shiny to complete the race is B = 1000/5 = 200 sec.
+            Time taken by Baley to complete the race is D = 1000/4 = 250 sec
+            Hence, D-B = 50 sec
+
+8.A and B participate in a 5000 m bicycle race which is being  run on a circular track of 500 m. If the speed
+   of A and B are 20 m/s and 10 m/s respectively, what is the distance covered by A when he passes B for
+   the seventh time ?
+Explanation:Track length = 500 m
+Speed of A and B are 20m/s and 10 m/s respectively
+Time taken by them to meet = length/ relative speed = 500/(20-10) 50 sec.
+Time taken to meet for the 7th time = 7 *50 =350 sec ……..(1)
+Total duration of race = total legth of race/ speed
+                                    = 500/20 = 250 sec.……..(2)
+From (1) and (2) we can find out that 7th time meeting is not possible.
+
