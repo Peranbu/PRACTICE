@@ -30,6 +30,7 @@ FROM Customers
 sql code to replace all '!' characters with a dot '.' in the description column of the Books table. Order the result by the year column.
 SELECT REPLACE(Desceiption,'!','.')
 FROM Books
+
 ORDER BY Year
 
 
@@ -45,3 +46,43 @@ Sort the result by the email column in ascending order.
 SELECT CONCAT(LOWER(Firstname)||'.'||LOWER(Lastname)||'@company.com') AS email
 FROM employees
 ORDER BY email ASC
+
+'''
+|| instead of using , we can use ||
+CONCAT Is used to merge firstname,.,lastname,@compay.com
+ORDER BY email ASC used to rearrange in ascending orders
+'''
+
+ARITHMATIC OPERATIONS(EXAMPLE)
+
+SELECT firstname, lastname, age / 2 AS discount
+FROM Customers
+
+SELECT firstname, lastname, weight/(height*height) AS bmi
+FROM Customers
+
+SELECT MAX(age) FROM Customers;
+SELECT MIN(age) FROM Customers; 
+
+# MAXIMUM REVENUE FROM COMPANIES
+
+
+SELECT *
+FROM Companies
+WHERE Revenue=(SELECT MAX(Revenue)
+FROM Companies
+)
+
+SELECT AVG(age) FROM Customers
+
+You are working on a table that stores the game scores of multiple players.
+Each player has a nickname associated with them. The table Scores has two columns, the nickname and the score.
+The table can store multiple rows for each player, which correspond to scores they earned during multiple games.
+You need to find the best score for each player and output the result sorted by the best score in descending order.
+The output should have the nickname column, followed by the best score column called 'best'.
+
+SELECT Nickname,max(score) as best
+FROM Scores
+GROUP BY Nickname
+ORDER BY best DESC
+
