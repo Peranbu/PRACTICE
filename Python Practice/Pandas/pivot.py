@@ -1,6 +1,6 @@
 import pandas as pd
 def pivotTable(weather: pd.DataFrame) -> pd.DataFrame:
-  return weather.pivot(index='month',column='city',values='temperature')
+  return weather.pivot(index='month',columns='city',values='temperature')
 
 """
 Example 1:
@@ -19,7 +19,7 @@ Input:
 | ElPaso       | April    | 2           |
 | ElPaso       | May      | 43          |
 +--------------+----------+-------------+
-Indes='city' column='month and temperature'
+Index='city' column='month and temperature'
 
 Output:
 +----------+--------+--------------+
@@ -32,7 +32,7 @@ Output:
 | May      | 43     | 34           |
 +----------+--------+--------------+
 
-weather.pivot(index='month',column='city',value='temperature')
+weather.pivot(index='month',columns='city',values='temperature')
 
 EXPLANATION
 
