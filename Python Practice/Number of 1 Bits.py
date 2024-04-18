@@ -7,3 +7,8 @@ def bit(n):
 
 n=int(input(" "))
 print(bit(n))
+
+"""
+input:1011
+output:8
+"""
