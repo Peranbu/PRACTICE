@@ -20,3 +20,6 @@ print(" ",trap(height))
       
     
   
+"""
+diagram is uploaded as photo
+"""
