@@ -9,3 +9,12 @@ if anagrams(word1,word2):
   print("it is anagram")
 else:
   print("not anagram")
+
+
+
+def Anagram(s,t):
+  if len(s)!=len(t):
+    return False
+  return sorted(list(s))==sorted(list(t))
+
+
