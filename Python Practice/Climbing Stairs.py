@@ -3,7 +3,11 @@ def Climb(n):
     return 1
   if n==2:
     return 2
-  dp=[0]*(n+1)
+  dp=[0]*(n+1)  #initialize n value with 0 for each value
+  """
+  n=5
+  [0,0,0,0,0,0,0] n=1,2,3,4,5
+  """
   dp[1]=1
   dp[2]=2
   for i in range(3,n+1):
