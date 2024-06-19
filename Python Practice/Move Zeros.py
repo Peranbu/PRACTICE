@@ -6,7 +6,8 @@ def Zeros(arr):
       j+=1
 
 arr=list(map(int,input(" ").split(",")))
-print("output",Zeros(arr))
+Zeros(arr)
+print("output",arr)
 
 
 """
