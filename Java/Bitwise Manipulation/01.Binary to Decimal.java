@@ -21,4 +21,7 @@ class Main{
 
 /*
   output:13
-  */
+
+  time complexity:O(len(String))
+  
+*/
