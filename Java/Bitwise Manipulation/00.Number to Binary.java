@@ -23,4 +23,6 @@ public class Main{
 }
 /*
 output:1101
+
+time complexity:O(log2(n))
 */
