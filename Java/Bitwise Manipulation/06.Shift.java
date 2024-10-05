@@ -52,6 +52,7 @@ class Main{
 
 
 //count the no of set bits -- number of 1's in the number
+//Brain Kernighan's Algorithm
 class Main{
   public static void main(String[] args){
     int n=13;
