@@ -20,5 +20,5 @@ class Main{
         }
 }
 
-//output:4
+//output:3
 
