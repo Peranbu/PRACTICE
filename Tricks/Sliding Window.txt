@@ -1,7 +1,0 @@
-Sliding Window
-
-Keywords-Subarray,Substring,Subsequence 
-
-Lenght of Subaray -- Fixed length of Substring -- Continuous Subarray/Substring/Subsequence
-
-**Average of Subarray**
