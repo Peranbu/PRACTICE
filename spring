@@ -1,0 +1,4002 @@
+# Adding Specific Validations — All 3 Microservices
+
+## What We Are Adding
+
+```
+✅ Mobile number must be exactly 10 digits
+✅ No repeated/duplicate names allowed
+✅ Email must contain @
+✅ All tied to proper exception responses
+```
+
+---
+
+# The 2 Ways We Handle These
+
+```
+1. @Valid Annotations  → Catches format errors BEFORE hitting service layer
+                         (mobile length, email format)
+
+2. Service Layer Check → Catches business logic BEFORE hitting DB
+                         (duplicate name check)
+```
+
+---
+
+# ORDER-SERVICE
+
+Order service has `doctorId` and `drugList` — no name/email/mobile here. But we add validation on DTO fields properly.
+
+## OrderDTO.java — Add Validations
+
+```java
+package com.order.service.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+public class OrderDTO {
+
+    @NotNull(message = "Doctor ID cannot be null")
+    private Long doctorId;
+
+    @NotBlank(message = "Drug list cannot be empty")
+    private String drugList;
+
+    @NotBlank(message = "Mobile number cannot be blank")
+    @Pattern(
+        regexp = "^[0-9]{10}$",
+        message = "Mobile number must be exactly 10 digits and contain only numbers"
+    )
+    private String mobileNumber;
+
+    // Getters and Setters
+    public Long getDoctorId() { return doctorId; }
+    public void setDoctorId(Long doctorId) { this.doctorId = doctorId; }
+
+    public String getDrugList() { return drugList; }
+    public void setDrugList(String drugList) { this.drugList = drugList; }
+
+    public String getMobileNumber() { return mobileNumber; }
+    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
+}
+```
+
+---
+
+## OrderModel.java — Add mobileNumber field
+
+```java
+package com.order.service.model;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "orders")
+public class OrderModel {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long orderId;
+
+    private Long doctorId;
+    private String drugList;
+    private String status;
+    private String mobileNumber;      // ← Add this
+
+    // Getters and Setters
+    public Long getOrderId() { return orderId; }
+    public void setOrderId(Long orderId) { this.orderId = orderId; }
+
+    public Long getDoctorId() { return doctorId; }
+    public void setDoctorId(Long doctorId) { this.doctorId = doctorId; }
+
+    public String getDrugList() { return drugList; }
+    public void setDrugList(String drugList) { this.drugList = drugList; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getMobileNumber() { return mobileNumber; }
+    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
+}
+```
+
+---
+
+## exception/InvalidMobileNumberException.java (Order-Service)
+
+```java
+package com.order.service.exception;
+
+public class InvalidMobileNumberException extends RuntimeException {
+
+    public InvalidMobileNumberException(String message) {
+        super(message);
+    }
+}
+```
+
+---
+
+## GlobalExceptionHandler.java — Updated (Order-Service)
+
+```java
+package com.order.service.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    // ── 1. Order Not Found ─────────────────────────────────────────────
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFound(
+            ResourceNotFoundException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.NOT_FOUND.value());
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    // ── 2. Invalid Mobile Number ───────────────────────────────────────
+    @ExceptionHandler(InvalidMobileNumberException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidMobile(
+            InvalidMobileNumberException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());     // 400
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 3. Validation Errors (@Valid failures) ─────────────────────────
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidationErrors(
+            MethodArgumentNotValidException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        Map<String, String> fieldErrors = new HashMap<>();
+
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+            fieldErrors.put(error.getField(), error.getDefaultMessage())
+        );
+
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", "Validation failed");
+        response.put("errors", fieldErrors);
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 4. Illegal Argument ────────────────────────────────────────────
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(
+            IllegalArgumentException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 5. Fallback ────────────────────────────────────────────────────
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleGenericException(
+            Exception ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
+        response.put("message", "Something went wrong: " + ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+}
+```
+
+---
+
+## OrderController.java — Add @Valid
+
+```java
+package com.order.service.controller;
+
+import com.order.service.dto.OrderDTO;
+import com.order.service.model.OrderModel;
+import com.order.service.service.OrderService;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+
+    @Autowired
+    private OrderService orderService;
+
+    @PostMapping
+    public ResponseEntity<OrderModel> createOrder(@Valid @RequestBody OrderDTO dto) {
+        // ↑ @Valid triggers all DTO annotations before entering service
+        return ResponseEntity.ok(orderService.createOrder(dto));
+    }
+
+    @PutMapping("/{id}/verify")
+    public ResponseEntity<OrderModel> verify(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.verify(id));
+    }
+
+    @PutMapping("/{id}/pickup")
+    public ResponseEntity<OrderModel> pickup(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.pickup(id));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<OrderModel> getOrder(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.getOrder(id));
+    }
+}
+```
+
+---
+
+# SUPPLIER-SERVICE
+
+Supplier has `name` and `contactInfo` — this is where duplicate name and mobile validations are most relevant.
+
+## SupplierDTO.java — Add Validations
+
+```java
+package com.supplier.service.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+
+public class SupplierDTO {
+
+    @NotBlank(message = "Supplier name cannot be blank")
+    @Pattern(
+        regexp = "^[a-zA-Z ]{2,50}$",
+        message = "Name must be 2-50 characters and contain only letters"
+    )
+    private String name;
+
+    @NotBlank(message = "Contact info cannot be blank")
+    private String contactInfo;
+
+    @NotBlank(message = "Mobile number cannot be blank")
+    @Pattern(
+        regexp = "^[0-9]{10}$",
+        message = "Mobile number must be exactly 10 digits"
+    )
+    private String mobileNumber;
+
+    @NotBlank(message = "Email cannot be blank")
+    @Pattern(
+        regexp = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+        message = "Email must contain @ and be a valid format"
+    )
+    private String email;
+
+    // Getters and Setters
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getContactInfo() { return contactInfo; }
+    public void setContactInfo(String contactInfo) { this.contactInfo = contactInfo; }
+
+    public String getMobileNumber() { return mobileNumber; }
+    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+}
+```
+
+---
+
+## SupplierModel.java — Add new fields
+
+```java
+package com.supplier.service.model;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "suppliers")
+public class SupplierModel {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long supplierId;
+
+    @Column(unique = true)   // ← DB level duplicate name protection
+    private String name;
+
+    private String contactInfo;
+    private String mobileNumber;    // ← Add
+    private String email;           // ← Add
+
+    // Getters and Setters
+    public Long getSupplierId() { return supplierId; }
+    public void setSupplierId(Long supplierId) { this.supplierId = supplierId; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getContactInfo() { return contactInfo; }
+    public void setContactInfo(String contactInfo) { this.contactInfo = contactInfo; }
+
+    public String getMobileNumber() { return mobileNumber; }
+    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+}
+```
+
+---
+
+## SupplierRepo.java — Add duplicate check method
+
+```java
+package com.supplier.service.repository;
+
+import com.supplier.service.model.SupplierModel;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface SupplierRepo extends JpaRepository<SupplierModel, Long> {
+
+    // Spring generates the query automatically from method name
+    boolean existsByName(String name);                        // ← duplicate name check
+    boolean existsByNameAndSupplierIdNot(String name, Long id); // ← check on update
+}
+```
+
+---
+
+## Custom Exceptions (Supplier-Service)
+
+### exception/DuplicateNameException.java
+
+```java
+package com.supplier.service.exception;
+
+public class DuplicateNameException extends RuntimeException {
+
+    public DuplicateNameException(String message) {
+        super(message);
+    }
+}
+```
+
+### exception/InvalidEmailException.java
+
+```java
+package com.supplier.service.exception;
+
+public class InvalidEmailException extends RuntimeException {
+
+    public InvalidEmailException(String message) {
+        super(message);
+    }
+}
+```
+
+### exception/InvalidMobileNumberException.java
+
+```java
+package com.supplier.service.exception;
+
+public class InvalidMobileNumberException extends RuntimeException {
+
+    public InvalidMobileNumberException(String message) {
+        super(message);
+    }
+}
+```
+
+---
+
+## GlobalExceptionHandler.java — Updated (Supplier-Service)
+
+```java
+package com.supplier.service.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    // ── 1. Supplier Not Found ──────────────────────────────────────────
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFound(
+            ResourceNotFoundException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.NOT_FOUND.value());       // 404
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    // ── 2. Duplicate Name ──────────────────────────────────────────────
+    @ExceptionHandler(DuplicateNameException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateName(
+            DuplicateNameException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.CONFLICT.value());        // 409
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
+    // ── 3. Invalid Email ───────────────────────────────────────────────
+    @ExceptionHandler(InvalidEmailException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidEmail(
+            InvalidEmailException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());     // 400
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 4. Invalid Mobile Number ───────────────────────────────────────
+    @ExceptionHandler(InvalidMobileNumberException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidMobile(
+            InvalidMobileNumberException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());     // 400
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 5. Validation Errors (@Valid) ──────────────────────────────────
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidationErrors(
+            MethodArgumentNotValidException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        Map<String, String> fieldErrors = new HashMap<>();
+
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+            fieldErrors.put(error.getField(), error.getDefaultMessage())
+        );
+
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", "Validation failed");
+        response.put("errors", fieldErrors);
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 6. Fallback ────────────────────────────────────────────────────
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleGenericException(
+            Exception ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
+        response.put("message", "Something went wrong: " + ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+}
+```
+
+---
+
+## SupplierService.java — Full with All Checks
+
+```java
+package com.supplier.service.service;
+
+import com.supplier.service.dto.SupplierDTO;
+import com.supplier.service.exception.DuplicateNameException;
+import com.supplier.service.exception.ResourceNotFoundException;
+import com.supplier.service.model.SupplierModel;
+import com.supplier.service.repository.SupplierRepo;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class SupplierService {
+
+    @Autowired
+    private SupplierRepo supplierRepo;
+
+    // Add Supplier
+    public SupplierModel add(SupplierDTO dto) {
+
+        // ── Duplicate name check ───────────────────────────────────────
+        if (supplierRepo.existsByName(dto.getName())) {
+            throw new DuplicateNameException(
+                "Supplier with name '" + dto.getName() + "' already exists");
+        }
+
+        SupplierModel supplier = new SupplierModel();
+        supplier.setName(dto.getName());
+        supplier.setContactInfo(dto.getContactInfo());
+        supplier.setMobileNumber(dto.getMobileNumber());
+        supplier.setEmail(dto.getEmail());
+
+        return supplierRepo.save(supplier);
+    }
+
+    // Update Supplier
+    public SupplierModel update(Long id, SupplierDTO dto) {
+
+        SupplierModel supplier = supplierRepo.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "Supplier not found with id: " + id));
+
+        // ── Duplicate name check on update (exclude current record) ───
+        if (supplierRepo.existsByNameAndSupplierIdNot(dto.getName(), id)) {
+            throw new DuplicateNameException(
+                "Another supplier with name '" + dto.getName() + "' already exists");
+        }
+
+        supplier.setName(dto.getName());
+        supplier.setContactInfo(dto.getContactInfo());
+        supplier.setMobileNumber(dto.getMobileNumber());
+        supplier.setEmail(dto.getEmail());
+
+        return supplierRepo.save(supplier);
+    }
+
+    // Delete Supplier
+    public void delete(Long id) {
+        SupplierModel supplier = supplierRepo.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "Supplier not found with id: " + id));
+
+        supplierRepo.delete(supplier);
+    }
+
+    // Get All
+    public List<SupplierModel> getAll() {
+        return supplierRepo.findAll();
+    }
+}
+```
+
+---
+
+## SupplierController.java — Add @Valid
+
+```java
+package com.supplier.service.controller;
+
+import com.supplier.service.dto.SupplierDTO;
+import com.supplier.service.model.SupplierModel;
+import com.supplier.service.service.SupplierService;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/suppliers")
+public class SupplierController {
+
+    @Autowired
+    private SupplierService supplierService;
+
+    @PostMapping
+    public ResponseEntity<SupplierModel> add(@Valid @RequestBody SupplierDTO dto) {
+        return ResponseEntity.ok(supplierService.add(dto));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<SupplierModel> update(
+            @PathVariable Long id,
+            @Valid @RequestBody SupplierDTO dto) {
+        return ResponseEntity.ok(supplierService.update(id, dto));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> delete(@PathVariable Long id) {
+        supplierService.delete(id);
+        return ResponseEntity.ok("Supplier deleted successfully");
+    }
+
+    @GetMapping
+    public ResponseEntity<List<SupplierModel>> getAll() {
+        return ResponseEntity.ok(supplierService.getAll());
+    }
+}
+```
+
+---
+
+# USER-SERVICE — All 3 Validations
+
+## UserDTO.java — Full Validations
+
+```java
+package com.user.service.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+
+public class UserDTO {
+
+    @NotBlank(message = "Name cannot be blank")
+    @Pattern(
+        regexp = "^[a-zA-Z ]{2,50}$",
+        message = "Name must be 2-50 characters, letters only"
+    )
+    private String name;
+
+    @NotBlank(message = "Email cannot be blank")
+    @Pattern(
+        regexp = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+        message = "Email must contain @ and be a valid format like example@mail.com"
+    )
+    private String email;
+
+    @NotBlank(message = "Mobile number cannot be blank")
+    @Pattern(
+        regexp = "^[0-9]{10}$",
+        message = "Mobile number must be exactly 10 digits"
+    )
+    private String mobileNumber;
+
+    @NotBlank(message = "Password cannot be blank")
+    private String password;
+
+    @NotBlank(message = "Role cannot be blank")
+    @Pattern(
+        regexp = "^(DOCTOR|ADMIN)$",
+        message = "Role must be either DOCTOR or ADMIN"
+    )
+    private String role;
+
+    // Getters and Setters
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getMobileNumber() { return mobileNumber; }
+    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+}
+```
+
+---
+
+## Custom Exceptions (User-Service)
+
+### exception/InvalidEmailException.java
+
+```java
+package com.user.service.exception;
+
+public class InvalidEmailException extends RuntimeException {
+
+    public InvalidEmailException(String message) {
+        super(message);
+    }
+}
+```
+
+### exception/InvalidMobileNumberException.java
+
+```java
+package com.user.service.exception;
+
+public class InvalidMobileNumberException extends RuntimeException {
+
+    public InvalidMobileNumberException(String message) {
+        super(message);
+    }
+}
+```
+
+### exception/DuplicateNameException.java
+
+```java
+package com.user.service.exception;
+
+public class DuplicateNameException extends RuntimeException {
+
+    public DuplicateNameException(String message) {
+        super(message);
+    }
+}
+```
+
+---
+
+## GlobalExceptionHandler.java — Full (User-Service)
+
+```java
+package com.user.service.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    // ── 1. User Not Found ──────────────────────────────────────────────
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotFound(
+            ResourceNotFoundException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.NOT_FOUND.value());       // 404
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    // ── 2. User Already Exists ─────────────────────────────────────────
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ResponseEntity<Map<String, Object>> handleUserExists(
+            UserAlreadyExistsException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.CONFLICT.value());        // 409
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
+    // ── 3. Duplicate Name ──────────────────────────────────────────────
+    @ExceptionHandler(DuplicateNameException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateName(
+            DuplicateNameException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.CONFLICT.value());        // 409
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
+    // ── 4. Invalid Email ───────────────────────────────────────────────
+    @ExceptionHandler(InvalidEmailException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidEmail(
+            InvalidEmailException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());     // 400
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 5. Invalid Mobile ──────────────────────────────────────────────
+    @ExceptionHandler(InvalidMobileNumberException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidMobile(
+            InvalidMobileNumberException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());     // 400
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 6. Validation Errors ───────────────────────────────────────────
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidationErrors(
+            MethodArgumentNotValidException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        Map<String, String> fieldErrors = new HashMap<>();
+
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+            fieldErrors.put(error.getField(), error.getDefaultMessage())
+        );
+
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", "Validation failed");
+        response.put("errors", fieldErrors);
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // ── 7. Wrong Password / Bad Credentials ────────────────────────────
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(
+            IllegalArgumentException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.UNAUTHORIZED.value());    // 401
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    }
+
+    // ── 8. Fallback ────────────────────────────────────────────────────
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleGenericException(
+            Exception ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
+        response.put("message", "Something went wrong: " + ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+}
+```
+
+---
+
+# Full Exception Map — All 3 Services
+
+| Validation | Where Checked | Exception Thrown | HTTP Code |
+|---|---|---|---|
+| Mobile = 10 digits | `@Pattern` in DTO | `MethodArgumentNotValidException` | 400 |
+| Email contains `@` | `@Pattern` in DTO | `MethodArgumentNotValidException` | 400 |
+| Duplicate name | Service layer (DB check) | `DuplicateNameException` | 409 |
+| ID not found | Service layer | `ResourceNotFoundException` | 404 |
+| Duplicate email | Service layer | `UserAlreadyExistsException` | 409 |
+| Wrong password | Service layer | `IllegalArgumentException` | 401 |
+| Anything else | Fallback handler | `Exception` | 500 |
+
+---
+
+Tell me what to build next — User-Service full code, JWT integration, or API Gateway!
+
+
+
+
+
+
+
+
+
+
+
+
+
+# JWT Full Implementation — Step by Step Code
+
+---
+
+# PHASE 1 — USER-SERVICE
+
+## Step 1 — Add Dependencies in pom.xml
+
+```xml
+<dependencies>
+
+    <!-- Existing dependencies stay as they are -->
+
+    <!-- Spring Security -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
+    <!-- JWT API -->
+    <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-api</artifactId>
+        <version>0.11.5</version>
+    </dependency>
+
+    <!-- JWT Implementation -->
+    <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-impl</artifactId>
+        <version>0.11.5</version>
+        <scope>runtime</scope>
+    </dependency>
+
+    <!-- JWT Jackson -->
+    <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-jackson</artifactId>
+        <version>0.11.5</version>
+        <scope>runtime</scope>
+    </dependency>
+
+</dependencies>
+```
+
+---
+
+## Step 2 — application.properties (User-Service)
+
+```properties
+server.port=8082
+spring.application.name=user-service
+
+# Database
+spring.datasource.url=jdbc:mysql://localhost:3306/user_service_db
+spring.datasource.username=root
+spring.datasource.password=yourpassword
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+# Eureka
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka/
+
+# JWT Secret Key
+jwt.secret=pharmacy_super_secret_key_2026_do_not_share
+jwt.expiration=86400000
+# 86400000 milliseconds = 24 hours
+```
+
+---
+
+## Step 3 — Project Structure (User-Service)
+
+```
+com.user.service
+  ├── config/
+  │     └── SecurityConfig.java
+  ├── controller/
+  │     └── UserController.java
+  ├── dto/
+  │     ├── UserDTO.java
+  │     └── LoginDTO.java
+  ├── exception/
+  │     ├── GlobalExceptionHandler.java
+  │     ├── ResourceNotFoundException.java
+  │     ├── UserAlreadyExistsException.java
+  │     ├── DuplicateNameException.java
+  │     ├── InvalidEmailException.java
+  │     └── InvalidMobileNumberException.java
+  ├── model/
+  │     └── UserModel.java
+  ├── repository/
+  │     └── UserRepo.java
+  ├── service/
+  │     └── UserService.java
+  ├── util/
+  │     └── JwtUtil.java
+  └── UserServiceApplication.java
+```
+
+---
+
+## Step 4 — UserModel.java
+
+```java
+package com.user.service.model;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "users")
+public class UserModel {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long userId;
+
+    @Column(unique = true, nullable = false)
+    private String name;
+
+    @Column(unique = true, nullable = false)
+    private String email;
+
+    @Column(nullable = false)
+    private String password;        // stored as BCrypt encoded
+
+    @Column(nullable = false)
+    private String mobileNumber;
+
+    @Column(nullable = false)
+    private String role;            // DOCTOR or ADMIN
+
+    // Getters and Setters
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+
+    public String getMobileNumber() { return mobileNumber; }
+    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+}
+```
+
+---
+
+## Step 5 — UserDTO.java
+
+```java
+package com.user.service.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+
+public class UserDTO {
+
+    @NotBlank(message = "Name cannot be blank")
+    @Pattern(regexp = "^[a-zA-Z ]{2,50}$",
+             message = "Name must be 2-50 characters, letters only")
+    private String name;
+
+    @NotBlank(message = "Email cannot be blank")
+    @Pattern(regexp = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+             message = "Email must contain @ and be valid")
+    private String email;
+
+    @NotBlank(message = "Password cannot be blank")
+    private String password;
+
+    @NotBlank(message = "Mobile number cannot be blank")
+    @Pattern(regexp = "^[0-9]{10}$",
+             message = "Mobile number must be exactly 10 digits")
+    private String mobileNumber;
+
+    @NotBlank(message = "Role cannot be blank")
+    @Pattern(regexp = "^(DOCTOR|ADMIN)$",
+             message = "Role must be DOCTOR or ADMIN")
+    private String role;
+
+    // Getters and Setters
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+
+    public String getMobileNumber() { return mobileNumber; }
+    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+}
+```
+
+---
+
+## Step 6 — LoginDTO.java
+
+```java
+package com.user.service.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+public class LoginDTO {
+
+    @NotBlank(message = "Email cannot be blank")
+    private String email;
+
+    @NotBlank(message = "Password cannot be blank")
+    private String password;
+
+    // Getters and Setters
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+}
+```
+
+---
+
+## Step 7 — UserRepo.java
+
+```java
+package com.user.service.repository;
+
+import com.user.service.model.UserModel;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface UserRepo extends JpaRepository<UserModel, Long> {
+
+    // Find user by email for login
+    UserModel findByEmail(String email);
+
+    // Check duplicate email on register
+    boolean existsByEmail(String email);
+
+    // Check duplicate name on register
+    boolean existsByName(String name);
+}
+```
+
+---
+
+## Step 8 — JwtUtil.java
+
+```java
+package com.user.service.util;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.security.Key;
+import java.util.Date;
+
+@Component
+public class JwtUtil {
+
+    // Reads jwt.secret from application.properties
+    @Value("${jwt.secret}")
+    private String secret;
+
+    // Reads jwt.expiration from application.properties
+    @Value("${jwt.expiration}")
+    private long expiration;
+
+    // Converts the secret string into a secure signing key
+    private Key getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes());
+    }
+
+    // ── GENERATE TOKEN ─────────────────────────────────────────────────
+    public String generateToken(String email, String role) {
+        return Jwts.builder()
+            .setSubject(email)                          // email goes inside token
+            .claim("role", role)                        // role goes inside token
+            .setIssuedAt(new Date())                    // token created time
+            .setExpiration(new Date(
+                System.currentTimeMillis() + expiration)) // expiry time
+            .signWith(getSigningKey(), SignatureAlgorithm.HS256) // sign with key
+            .compact();                                 // build the token string
+    }
+
+    // ── EXTRACT EMAIL FROM TOKEN ────────────────────────────────────────
+    public String getEmailFromToken(String token) {
+        return Jwts.parserBuilder()
+            .setSigningKey(getSigningKey())
+            .build()
+            .parseClaimsJws(token)
+            .getBody()
+            .getSubject();
+    }
+
+    // ── EXTRACT ROLE FROM TOKEN ─────────────────────────────────────────
+    public String getRoleFromToken(String token) {
+        return (String) Jwts.parserBuilder()
+            .setSigningKey(getSigningKey())
+            .build()
+            .parseClaimsJws(token)
+            .getBody()
+            .get("role");
+    }
+
+    // ── VALIDATE TOKEN ──────────────────────────────────────────────────
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token);
+            return true;    // token is valid
+        } catch (Exception e) {
+            return false;   // token is invalid or expired
+        }
+    }
+}
+```
+
+---
+
+## Step 9 — UserService.java
+
+```java
+package com.user.service.service;
+
+import com.user.service.dto.LoginDTO;
+import com.user.service.dto.UserDTO;
+import com.user.service.exception.DuplicateNameException;
+import com.user.service.exception.ResourceNotFoundException;
+import com.user.service.exception.UserAlreadyExistsException;
+import com.user.service.model.UserModel;
+import com.user.service.repository.UserRepo;
+import com.user.service.util.JwtUtil;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+
+    @Autowired
+    private UserRepo userRepo;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
+
+    // ── REGISTER ────────────────────────────────────────────────────────
+    public String register(UserDTO dto) {
+
+        // Check duplicate email
+        if (userRepo.existsByEmail(dto.getEmail())) {
+            throw new UserAlreadyExistsException(
+                "User already exists with email: " + dto.getEmail());
+        }
+
+        // Check duplicate name
+        if (userRepo.existsByName(dto.getName())) {
+            throw new DuplicateNameException(
+                "User already exists with name: " + dto.getName());
+        }
+
+        UserModel user = new UserModel();
+        user.setName(dto.getName());
+        user.setEmail(dto.getEmail());
+        user.setPassword(passwordEncoder.encode(dto.getPassword())); // encode password
+        user.setMobileNumber(dto.getMobileNumber());
+        user.setRole(dto.getRole());
+
+        userRepo.save(user);
+        return "User registered successfully";
+    }
+
+    // ── LOGIN ────────────────────────────────────────────────────────────
+    public String login(LoginDTO dto) {
+
+        // Find user by email
+        UserModel user = userRepo.findByEmail(dto.getEmail());
+
+        if (user == null) {
+            throw new ResourceNotFoundException(
+                "No user found with email: " + dto.getEmail());
+        }
+
+        // Match raw password with encoded password in DB
+        if (!passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("Invalid credentials");
+        }
+
+        // Generate and return JWT token
+        return jwtUtil.generateToken(user.getEmail(), user.getRole());
+    }
+}
+```
+
+---
+
+## Step 10 — UserController.java
+
+```java
+package com.user.service.controller;
+
+import com.user.service.dto.LoginDTO;
+import com.user.service.dto.UserDTO;
+import com.user.service.service.UserService;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    // Register
+    @PostMapping("/register")
+    public ResponseEntity<String> register(@Valid @RequestBody UserDTO dto) {
+        return ResponseEntity.ok(userService.register(dto));
+    }
+
+    // Login — returns JWT token
+    @PostMapping("/login")
+    public ResponseEntity<String> login(@Valid @RequestBody LoginDTO dto) {
+        String token = userService.login(dto);
+        return ResponseEntity.ok(token);
+    }
+}
+```
+
+---
+
+## Step 11 — SecurityConfig.java (User-Service)
+
+```java
+package com.user.service.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    // BCrypt bean — used in UserService to encode/match passwords
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable())   // Disable CSRF for REST API
+
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(
+                    SessionCreationPolicy.STATELESS)) // No sessions, JWT only
+
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(
+                    "/api/users/register",
+                    "/api/users/login"
+                ).permitAll()               // These 2 endpoints are open
+                .anyRequest().authenticated() // All others need token
+            );
+
+        return http.build();
+    }
+}
+```
+
+---
+
+# PHASE 2 — ORDER-SERVICE
+
+## Step 1 — Add Dependencies in pom.xml (same JWT deps)
+
+```xml
+<!-- Spring Security -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+
+<!-- JWT API -->
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.11.5</version>
+</dependency>
+
+<!-- JWT Implementation -->
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.11.5</version>
+    <scope>runtime</scope>
+</dependency>
+
+<!-- JWT Jackson -->
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.11.5</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+---
+
+## Step 2 — application.properties (Order-Service)
+
+```properties
+server.port=8081
+spring.application.name=order-service
+
+spring.datasource.url=jdbc:mysql://localhost:3306/order_service
+spring.datasource.username=root
+spring.datasource.password=yourpassword
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka/
+
+# MUST BE SAME SECRET AS USER-SERVICE
+jwt.secret=pharmacy_super_secret_key_2026_do_not_share
+```
+
+---
+
+## Step 3 — New Package Structure (Order-Service)
+
+```
+com.order.service
+  ├── config/
+  │     └── SecurityConfig.java      ← NEW
+  ├── controller/
+  │     └── OrderController.java
+  ├── dto/
+  │     └── OrderDTO.java
+  ├── exception/
+  │     ├── GlobalExceptionHandler.java
+  │     └── ResourceNotFoundException.java
+  ├── filter/
+  │     └── JwtFilter.java           ← NEW
+  ├── model/
+  │     └── OrderModel.java
+  ├── repository/
+  │     └── OrderRepo.java
+  ├── service/
+  │     └── OrderService.java
+  ├── util/
+  │     └── JwtUtil.java             ← NEW
+  └── OrderServiceApplication.java
+```
+
+---
+
+## Step 4 — JwtUtil.java (Order-Service)
+
+```java
+package com.order.service.util;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.security.Key;
+
+@Component
+public class JwtUtil {
+
+    @Value("${jwt.secret}")
+    private String secret;
+
+    private Key getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes());
+    }
+
+    // ── VALIDATE TOKEN ──────────────────────────────────────────────────
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // ── GET EMAIL FROM TOKEN ────────────────────────────────────────────
+    public String getEmailFromToken(String token) {
+        return Jwts.parserBuilder()
+            .setSigningKey(getSigningKey())
+            .build()
+            .parseClaimsJws(token)
+            .getBody()
+            .getSubject();
+    }
+
+    // ── GET ROLE FROM TOKEN ─────────────────────────────────────────────
+    public String getRoleFromToken(String token) {
+        return (String) Jwts.parserBuilder()
+            .setSigningKey(getSigningKey())
+            .build()
+            .parseClaimsJws(token)
+            .getBody()
+            .get("role");
+    }
+}
+```
+
+---
+
+## Step 5 — JwtFilter.java (Order-Service)
+
+```java
+package com.order.service.filter;
+
+import com.order.service.util.JwtUtil;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.List;
+
+@Component
+public class JwtFilter extends OncePerRequestFilter {
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain) throws ServletException, IOException {
+
+        // Step 1 — Read Authorization header
+        String authHeader = request.getHeader("Authorization");
+
+        // Step 2 — Check if header exists and starts with Bearer
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+
+            // Step 3 — Extract token (remove "Bearer " prefix)
+            String token = authHeader.substring(7);
+
+            // Step 4 — Validate token
+            if (jwtUtil.validateToken(token)) {
+
+                // Step 5 — Extract email and role from token
+                String email = jwtUtil.getEmailFromToken(token);
+                String role  = jwtUtil.getRoleFromToken(token);
+
+                // Step 6 — Set authentication in Spring Security context
+                UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                        email,
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                        // ROLE_DOCTOR or ROLE_ADMIN
+                    );
+
+                SecurityContextHolder.getContext()
+                    .setAuthentication(authentication);
+            }
+        }
+
+        // Step 7 — Continue to next filter or controller
+        filterChain.doFilter(request, response);
+    }
+}
+```
+
+---
+
+## Step 6 — SecurityConfig.java (Order-Service)
+
+```java
+package com.order.service.config;
+
+import com.order.service.filter.JwtFilter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Autowired
+    private JwtFilter jwtFilter;
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable())
+
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+            .authorizeHttpRequests(auth -> auth
+
+                // Create order — DOCTOR and ADMIN
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.POST,
+                    "/api/orders"
+                ).hasAnyRole("DOCTOR", "ADMIN")
+
+                // Verify order — ADMIN only
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.PUT,
+                    "/api/orders/*/verify"
+                ).hasRole("ADMIN")
+
+                // Pickup order — DOCTOR and ADMIN
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.PUT,
+                    "/api/orders/*/pickup"
+                ).hasAnyRole("DOCTOR", "ADMIN")
+
+                // Get order — DOCTOR and ADMIN
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.GET,
+                    "/api/orders/*"
+                ).hasAnyRole("DOCTOR", "ADMIN")
+
+                .anyRequest().authenticated()
+            )
+
+            // Register JwtFilter to run before Spring's auth filter
+            .addFilterBefore(jwtFilter,
+                UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
+}
+```
+
+---
+
+# PHASE 3 — SUPPLIER-SERVICE
+
+## Step 1 — Add same Dependencies in pom.xml
+*(Exact same JWT + Security dependencies as Order-Service)*
+
+---
+
+## Step 2 — application.properties (Supplier-Service)
+
+```properties
+server.port=6683
+spring.application.name=supplier-service
+
+spring.datasource.url=jdbc:mysql://localhost:3306/supplier_service_db
+spring.datasource.username=root
+spring.datasource.password=yourpassword
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka/
+
+# MUST BE SAME SECRET AS USER-SERVICE
+jwt.secret=pharmacy_super_secret_key_2026_do_not_share
+```
+
+---
+
+## Step 3 — JwtUtil.java (Supplier-Service)
+
+```java
+package com.supplier.service.util;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.security.Key;
+
+@Component
+public class JwtUtil {
+
+    @Value("${jwt.secret}")
+    private String secret;
+
+    private Key getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes());
+    }
+
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getEmailFromToken(String token) {
+        return Jwts.parserBuilder()
+            .setSigningKey(getSigningKey())
+            .build()
+            .parseClaimsJws(token)
+            .getBody()
+            .getSubject();
+    }
+
+    public String getRoleFromToken(String token) {
+        return (String) Jwts.parserBuilder()
+            .setSigningKey(getSigningKey())
+            .build()
+            .parseClaimsJws(token)
+            .getBody()
+            .get("role");
+    }
+}
+```
+
+---
+
+## Step 4 — JwtFilter.java (Supplier-Service)
+
+```java
+package com.supplier.service.filter;
+
+import com.supplier.service.util.JwtUtil;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.List;
+
+@Component
+public class JwtFilter extends OncePerRequestFilter {
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain) throws ServletException, IOException {
+
+        String authHeader = request.getHeader("Authorization");
+
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+
+            String token = authHeader.substring(7);
+
+            if (jwtUtil.validateToken(token)) {
+
+                String email = jwtUtil.getEmailFromToken(token);
+                String role  = jwtUtil.getRoleFromToken(token);
+
+                UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                        email,
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                    );
+
+                SecurityContextHolder.getContext()
+                    .setAuthentication(authentication);
+            }
+        }
+
+        filterChain.doFilter(request, response);
+    }
+}
+```
+
+---
+
+## Step 5 — SecurityConfig.java (Supplier-Service)
+
+```java
+package com.supplier.service.config;
+
+import com.supplier.service.filter.JwtFilter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Autowired
+    private JwtFilter jwtFilter;
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable())
+
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+            .authorizeHttpRequests(auth -> auth
+
+                // Add supplier — ADMIN only
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.POST,
+                    "/api/suppliers"
+                ).hasRole("ADMIN")
+
+                // Update supplier — ADMIN only
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.PUT,
+                    "/api/suppliers/*"
+                ).hasRole("ADMIN")
+
+                // Delete supplier — ADMIN only
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.DELETE,
+                    "/api/suppliers/*"
+                ).hasRole("ADMIN")
+
+                // Get all suppliers — DOCTOR and ADMIN
+                .requestMatchers(
+                    org.springframework.http.HttpMethod.GET,
+                    "/api/suppliers"
+                ).hasAnyRole("DOCTOR", "ADMIN")
+
+                .anyRequest().authenticated()
+            )
+
+            .addFilterBefore(jwtFilter,
+                UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
+}
+```
+
+---
+
+# How to Test in Postman
+
+## Step 1 — Register a user
+```
+POST http://localhost:8082/api/users/register
+Body (JSON):
+{
+  "name": "John Doctor",
+  "email": "john@gmail.com",
+  "password": "pass1234",
+  "mobileNumber": "9876543210",
+  "role": "DOCTOR"
+}
+```
+
+## Step 2 — Login and get token
+```
+POST http://localhost:8082/api/users/login
+Body (JSON):
+{
+  "email": "john@gmail.com",
+  "password": "pass1234"
+}
+
+Response:
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huQGdtYWlsLmNvbSIs...
+```
+
+## Step 3 — Use token in Order-Service
+```
+POST http://localhost:8081/api/orders
+Headers:
+  Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+Body (JSON):
+{
+  "doctorId": 1,
+  "drugList": "Paracetamol, Ibuprofen",
+  "mobileNumber": "9876543210"
+}
+```
+
+---
+
+# Full Summary Table
+
+| Service | JWT Role | New Files Added |
+|---|---|---|
+| User-Service | Generates token | JwtUtil, SecurityConfig |
+| Order-Service | Validates token | JwtUtil, JwtFilter, SecurityConfig |
+| Supplier-Service | Validates token | JwtUtil, JwtFilter, SecurityConfig |
+
+---
+
+Tell me what to build next — **API Gateway** or anything else!
+
+
+
+
+
+
+
+
+# Logger + Swagger — Full Implementation All 3 Microservices
+
+---
+
+# PART 1 — DEPENDENCIES (Add to all 3 services)
+
+## pom.xml — Add SpringDoc Swagger
+*(Logger needs no dependency — already built into Spring Boot)*
+
+```xml
+<!-- Swagger / OpenAPI Documentation -->
+<dependency>
+    <groupId>org.springdoc</groupId>
+    <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+    <version>2.5.0</version>
+</dependency>
+```
+
+---
+
+# PART 2 — APPLICATION.PROPERTIES (All 3 Services)
+
+## Order-Service application.properties
+
+```properties
+server.port=8081
+spring.application.name=order-service
+
+spring.datasource.url=jdbc:mysql://localhost:3306/order_service
+spring.datasource.username=root
+spring.datasource.password=yourpassword
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka/
+
+jwt.secret=pharmacy_super_secret_key_2026_do_not_share
+
+# ── LOGGER SETTINGS ───────────────────────────────────────────
+logging.level.com.order.service=DEBUG
+logging.level.org.springframework.security=INFO
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} %-5level [%logger{36}] - %msg%n
+logging.file.name=logs/order-service.log
+
+# ── SWAGGER SETTINGS ──────────────────────────────────────────
+springdoc.api-docs.path=/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.enabled=true
+```
+
+## Supplier-Service application.properties
+
+```properties
+server.port=6683
+spring.application.name=supplier-service
+
+spring.datasource.url=jdbc:mysql://localhost:3306/supplier_service_db
+spring.datasource.username=root
+spring.datasource.password=yourpassword
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka/
+
+jwt.secret=pharmacy_super_secret_key_2026_do_not_share
+
+# ── LOGGER SETTINGS ───────────────────────────────────────────
+logging.level.com.supplier.service=DEBUG
+logging.level.org.springframework.security=INFO
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} %-5level [%logger{36}] - %msg%n
+logging.file.name=logs/supplier-service.log
+
+# ── SWAGGER SETTINGS ──────────────────────────────────────────
+springdoc.api-docs.path=/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.enabled=true
+```
+
+## User-Service application.properties
+
+```properties
+server.port=8082
+spring.application.name=user-service
+
+spring.datasource.url=jdbc:mysql://localhost:3306/user_service_db
+spring.datasource.username=root
+spring.datasource.password=yourpassword
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka/
+
+jwt.secret=pharmacy_super_secret_key_2026_do_not_share
+jwt.expiration=86400000
+
+# ── LOGGER SETTINGS ───────────────────────────────────────────
+logging.level.com.user.service=DEBUG
+logging.level.org.springframework.security=INFO
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} %-5level [%logger{36}] - %msg%n
+logging.file.name=logs/user-service.log
+
+# ── SWAGGER SETTINGS ──────────────────────────────────────────
+springdoc.api-docs.path=/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.enabled=true
+```
+
+---
+
+# PART 3 — SWAGGER CONFIG (Same for all 3 services, only names change)
+
+## ORDER-SERVICE — SwaggerConfig.java
+
+```java
+package com.order.service.config;
+
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.Components;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class SwaggerConfig {
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+
+        // This tells Swagger: "There is a security scheme called BearerAuth"
+        SecurityScheme securityScheme = new SecurityScheme()
+            .name("BearerAuth")
+            .type(SecurityScheme.Type.HTTP)
+            .scheme("bearer")
+            .bearerFormat("JWT")
+            .description("Paste your JWT token here");
+
+        // This applies the security scheme to ALL endpoints globally
+        SecurityRequirement securityRequirement =
+            new SecurityRequirement().addList("BearerAuth");
+
+        return new OpenAPI()
+            .info(new Info()
+                .title("Order Service API")
+                .description("Pharmacy Management - Order Microservice")
+                .version("1.0.0"))
+            .addSecurityItem(securityRequirement)
+            .components(new Components()
+                .addSecuritySchemes("BearerAuth", securityScheme));
+    }
+}
+```
+
+## SUPPLIER-SERVICE — SwaggerConfig.java
+
+```java
+package com.supplier.service.config;
+
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.Components;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class SwaggerConfig {
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+
+        SecurityScheme securityScheme = new SecurityScheme()
+            .name("BearerAuth")
+            .type(SecurityScheme.Type.HTTP)
+            .scheme("bearer")
+            .bearerFormat("JWT")
+            .description("Paste your JWT token here");
+
+        SecurityRequirement securityRequirement =
+            new SecurityRequirement().addList("BearerAuth");
+
+        return new OpenAPI()
+            .info(new Info()
+                .title("Supplier Service API")
+                .description("Pharmacy Management - Supplier Microservice")
+                .version("1.0.0"))
+            .addSecurityItem(securityRequirement)
+            .components(new Components()
+                .addSecuritySchemes("BearerAuth", securityScheme));
+    }
+}
+```
+
+## USER-SERVICE — SwaggerConfig.java
+
+```java
+package com.user.service.config;
+
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.Components;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class SwaggerConfig {
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+
+        SecurityScheme securityScheme = new SecurityScheme()
+            .name("BearerAuth")
+            .type(SecurityScheme.Type.HTTP)
+            .scheme("bearer")
+            .bearerFormat("JWT")
+            .description("Paste your JWT token here");
+
+        SecurityRequirement securityRequirement =
+            new SecurityRequirement().addList("BearerAuth");
+
+        return new OpenAPI()
+            .info(new Info()
+                .title("User Service API")
+                .description("Pharmacy Management - User Microservice")
+                .version("1.0.0"))
+            .addSecurityItem(securityRequirement)
+            .components(new Components()
+                .addSecuritySchemes("BearerAuth", securityScheme));
+    }
+}
+```
+
+---
+
+## Allow Swagger URLs in SecurityConfig (All 3 Services)
+
+You must whitelist Swagger URLs in your SecurityConfig otherwise Spring Security will block the Swagger page. Add these lines to the `authorizeHttpRequests` block of all 3 SecurityConfig files:
+
+```java
+.authorizeHttpRequests(auth -> auth
+
+    // ── Allow Swagger URLs without token ──────────────────────
+    .requestMatchers(
+        "/swagger-ui.html",
+        "/swagger-ui/**",
+        "/api-docs/**",
+        "/api-docs",
+        "/v3/api-docs/**"
+    ).permitAll()
+
+    // ── Your existing rules below ──────────────────────────────
+    // ... rest of your rules stay the same
+)
+```
+
+---
+
+# PART 4 — LOGGER IMPLEMENTATION
+
+## ORDER-SERVICE
+
+### OrderService.java — With Logger
+
+```java
+package com.order.service.service;
+
+import com.order.service.dto.OrderDTO;
+import com.order.service.exception.ResourceNotFoundException;
+import com.order.service.model.OrderModel;
+import com.order.service.repository.OrderRepo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class OrderService {
+
+    // ── Declare Logger ─────────────────────────────────────────────────
+    private static final Logger logger =
+        LoggerFactory.getLogger(OrderService.class);
+
+    @Autowired
+    private OrderRepo orderRepo;
+
+    // Create Order
+    public OrderModel createOrder(OrderDTO dto) {
+        logger.info("Creating order for doctorId: {}", dto.getDoctorId());
+
+        OrderModel order = new OrderModel();
+        order.setDoctorId(dto.getDoctorId());
+        order.setDrugList(dto.getDrugList());
+        order.setMobileNumber(dto.getMobileNumber());
+        order.setStatus("CREATED");
+
+        OrderModel saved = orderRepo.save(order);
+        logger.info("Order created successfully with id: {}", saved.getOrderId());
+        return saved;
+    }
+
+    // Verify Order
+    public OrderModel verify(Long id) {
+        logger.info("Verifying order with id: {}", id);
+
+        OrderModel order = orderRepo.findById(id)
+            .orElseThrow(() -> {
+                logger.error("Order not found with id: {}", id);
+                return new ResourceNotFoundException(
+                    "Order not found with id: " + id);
+            });
+
+        order.setStatus("VERIFIED");
+        OrderModel saved = orderRepo.save(order);
+        logger.info("Order id: {} status updated to VERIFIED", id);
+        return saved;
+    }
+
+    // Pickup Order
+    public OrderModel pickup(Long id) {
+        logger.info("Pickup requested for order id: {}", id);
+
+        OrderModel order = orderRepo.findById(id)
+            .orElseThrow(() -> {
+                logger.error("Order not found with id: {}", id);
+                return new ResourceNotFoundException(
+                    "Order not found with id: " + id);
+            });
+
+        if (!order.getStatus().equals("VERIFIED")) {
+            logger.warn("Pickup failed for order id: {} — current status: {}",
+                id, order.getStatus());
+            throw new IllegalArgumentException(
+                "Order must be VERIFIED before pickup. Current status: "
+                + order.getStatus());
+        }
+
+        order.setStatus("PICKED UP");
+        OrderModel saved = orderRepo.save(order);
+        logger.info("Order id: {} status updated to PICKED UP", id);
+        return saved;
+    }
+
+    // Get Order
+    public OrderModel getOrder(Long id) {
+        logger.debug("Fetching order with id: {}", id);
+
+        return orderRepo.findById(id)
+            .orElseThrow(() -> {
+                logger.error("Order not found with id: {}", id);
+                return new ResourceNotFoundException(
+                    "Order not found with id: " + id);
+            });
+    }
+}
+```
+
+---
+
+### OrderController.java — With Logger + Swagger Annotations
+
+```java
+package com.order.service.controller;
+
+import com.order.service.dto.OrderDTO;
+import com.order.service.model.OrderModel;
+import com.order.service.service.OrderService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/orders")
+@Tag(name = "Order Controller",
+     description = "Endpoints for creating and managing orders")
+public class OrderController {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(OrderController.class);
+
+    @Autowired
+    private OrderService orderService;
+
+    @PostMapping
+    @Operation(summary = "Create a new order",
+               description = "Creates an order with status CREATED")
+    public ResponseEntity<OrderModel> createOrder(
+            @Valid @RequestBody OrderDTO dto) {
+        logger.info("POST /api/orders - request received");
+        return ResponseEntity.ok(orderService.createOrder(dto));
+    }
+
+    @PutMapping("/{id}/verify")
+    @Operation(summary = "Verify an order",
+               description = "Updates order status to VERIFIED")
+    public ResponseEntity<OrderModel> verify(@PathVariable Long id) {
+        logger.info("PUT /api/orders/{}/verify - request received", id);
+        return ResponseEntity.ok(orderService.verify(id));
+    }
+
+    @PutMapping("/{id}/pickup")
+    @Operation(summary = "Pickup an order",
+               description = "Updates order status to PICKED UP")
+    public ResponseEntity<OrderModel> pickup(@PathVariable Long id) {
+        logger.info("PUT /api/orders/{}/pickup - request received", id);
+        return ResponseEntity.ok(orderService.pickup(id));
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Get an order by ID",
+               description = "Returns order details for the given ID")
+    public ResponseEntity<OrderModel> getOrder(@PathVariable Long id) {
+        logger.debug("GET /api/orders/{} - request received", id);
+        return ResponseEntity.ok(orderService.getOrder(id));
+    }
+}
+```
+
+---
+
+### GlobalExceptionHandler.java — With Logger (Order-Service)
+
+```java
+package com.order.service.exception;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFound(
+            ResourceNotFoundException ex) {
+        logger.error("Resource not found: {}", ex.getMessage());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.NOT_FOUND.value());
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(InvalidMobileNumberException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidMobile(
+            InvalidMobileNumberException ex) {
+        logger.warn("Invalid mobile number: {}", ex.getMessage());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidationErrors(
+            MethodArgumentNotValidException ex) {
+        logger.warn("Validation failed: {}", ex.getMessage());
+
+        Map<String, Object> response = new HashMap<>();
+        Map<String, String> fieldErrors = new HashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+            fieldErrors.put(error.getField(), error.getDefaultMessage()));
+
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", "Validation failed");
+        response.put("errors", fieldErrors);
+        response.put("timestamp", LocalDateTime.now());
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(
+            IllegalArgumentException ex) {
+        logger.warn("Illegal argument: {}", ex.getMessage());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleGenericException(
+            Exception ex) {
+        logger.error("Unexpected error occurred: {}", ex.getMessage());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
+        response.put("message", "Something went wrong: " + ex.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+}
+```
+
+---
+
+## SUPPLIER-SERVICE
+
+### SupplierService.java — With Logger
+
+```java
+package com.supplier.service.service;
+
+import com.supplier.service.dto.SupplierDTO;
+import com.supplier.service.exception.DuplicateNameException;
+import com.supplier.service.exception.ResourceNotFoundException;
+import com.supplier.service.model.SupplierModel;
+import com.supplier.service.repository.SupplierRepo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class SupplierService {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(SupplierService.class);
+
+    @Autowired
+    private SupplierRepo supplierRepo;
+
+    // Add Supplier
+    public SupplierModel add(SupplierDTO dto) {
+        logger.info("Adding new supplier with name: {}", dto.getName());
+
+        if (supplierRepo.existsByName(dto.getName())) {
+            logger.warn("Duplicate supplier name attempted: {}", dto.getName());
+            throw new DuplicateNameException(
+                "Supplier with name '" + dto.getName() + "' already exists");
+        }
+
+        SupplierModel supplier = new SupplierModel();
+        supplier.setName(dto.getName());
+        supplier.setContactInfo(dto.getContactInfo());
+        supplier.setMobileNumber(dto.getMobileNumber());
+        supplier.setEmail(dto.getEmail());
+
+        SupplierModel saved = supplierRepo.save(supplier);
+        logger.info("Supplier added successfully with id: {}", saved.getSupplierId());
+        return saved;
+    }
+
+    // Update Supplier
+    public SupplierModel update(Long id, SupplierDTO dto) {
+        logger.info("Updating supplier with id: {}", id);
+
+        SupplierModel supplier = supplierRepo.findById(id)
+            .orElseThrow(() -> {
+                logger.error("Supplier not found with id: {}", id);
+                return new ResourceNotFoundException(
+                    "Supplier not found with id: " + id);
+            });
+
+        if (supplierRepo.existsByNameAndSupplierIdNot(dto.getName(), id)) {
+            logger.warn("Duplicate name on update: {}", dto.getName());
+            throw new DuplicateNameException(
+                "Another supplier with name '" + dto.getName() + "' already exists");
+        }
+
+        supplier.setName(dto.getName());
+        supplier.setContactInfo(dto.getContactInfo());
+        supplier.setMobileNumber(dto.getMobileNumber());
+        supplier.setEmail(dto.getEmail());
+
+        SupplierModel saved = supplierRepo.save(supplier);
+        logger.info("Supplier id: {} updated successfully", id);
+        return saved;
+    }
+
+    // Delete Supplier
+    public void delete(Long id) {
+        logger.info("Deleting supplier with id: {}", id);
+
+        SupplierModel supplier = supplierRepo.findById(id)
+            .orElseThrow(() -> {
+                logger.error("Supplier not found with id: {}", id);
+                return new ResourceNotFoundException(
+                    "Supplier not found with id: " + id);
+            });
+
+        supplierRepo.delete(supplier);
+        logger.info("Supplier id: {} deleted successfully", id);
+    }
+
+    // Get All
+    public List<SupplierModel> getAll() {
+        logger.debug("Fetching all suppliers");
+        List<SupplierModel> list = supplierRepo.findAll();
+        logger.info("Total suppliers found: {}", list.size());
+        return list;
+    }
+}
+```
+
+---
+
+### SupplierController.java — With Logger + Swagger Annotations
+
+```java
+package com.supplier.service.controller;
+
+import com.supplier.service.dto.SupplierDTO;
+import com.supplier.service.model.SupplierModel;
+import com.supplier.service.service.SupplierService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/suppliers")
+@Tag(name = "Supplier Controller",
+     description = "Endpoints for managing suppliers")
+public class SupplierController {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(SupplierController.class);
+
+    @Autowired
+    private SupplierService supplierService;
+
+    @PostMapping
+    @Operation(summary = "Add a new supplier",
+               description = "Admin only — adds a new supplier")
+    public ResponseEntity<SupplierModel> add(
+            @Valid @RequestBody SupplierDTO dto) {
+        logger.info("POST /api/suppliers - request received");
+        return ResponseEntity.ok(supplierService.add(dto));
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Update a supplier",
+               description = "Admin only — updates supplier details")
+    public ResponseEntity<SupplierModel> update(
+            @PathVariable Long id,
+            @Valid @RequestBody SupplierDTO dto) {
+        logger.info("PUT /api/suppliers/{} - request received", id);
+        return ResponseEntity.ok(supplierService.update(id, dto));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete a supplier",
+               description = "Admin only — deletes a supplier by ID")
+    public ResponseEntity<String> delete(@PathVariable Long id) {
+        logger.info("DELETE /api/suppliers/{} - request received", id);
+        supplierService.delete(id);
+        return ResponseEntity.ok("Supplier deleted successfully");
+    }
+
+    @GetMapping
+    @Operation(summary = "Get all suppliers",
+               description = "Doctor and Admin — returns all suppliers")
+    public ResponseEntity<List<SupplierModel>> getAll() {
+        logger.debug("GET /api/suppliers - request received");
+        return ResponseEntity.ok(supplierService.getAll());
+    }
+}
+```
+
+---
+
+## USER-SERVICE
+
+### UserService.java — With Logger
+
+```java
+package com.user.service.service;
+
+import com.user.service.dto.LoginDTO;
+import com.user.service.dto.UserDTO;
+import com.user.service.exception.DuplicateNameException;
+import com.user.service.exception.ResourceNotFoundException;
+import com.user.service.exception.UserAlreadyExistsException;
+import com.user.service.model.UserModel;
+import com.user.service.repository.UserRepo;
+import com.user.service.util.JwtUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(UserService.class);
+
+    @Autowired
+    private UserRepo userRepo;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
+
+    // Register
+    public String register(UserDTO dto) {
+        logger.info("Register request received for email: {}", dto.getEmail());
+
+        if (userRepo.existsByEmail(dto.getEmail())) {
+            logger.warn("Duplicate email on register: {}", dto.getEmail());
+            throw new UserAlreadyExistsException(
+                "User already exists with email: " + dto.getEmail());
+        }
+
+        if (userRepo.existsByName(dto.getName())) {
+            logger.warn("Duplicate name on register: {}", dto.getName());
+            throw new DuplicateNameException(
+                "User already exists with name: " + dto.getName());
+        }
+
+        UserModel user = new UserModel();
+        user.setName(dto.getName());
+        user.setEmail(dto.getEmail());
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setMobileNumber(dto.getMobileNumber());
+        user.setRole(dto.getRole());
+
+        userRepo.save(user);
+        logger.info("User registered successfully with email: {}", dto.getEmail());
+        return "User registered successfully";
+    }
+
+    // Login
+    public String login(LoginDTO dto) {
+        logger.info("Login attempt for email: {}", dto.getEmail());
+
+        UserModel user = userRepo.findByEmail(dto.getEmail());
+
+        if (user == null) {
+            logger.error("Login failed — no user found with email: {}",
+                dto.getEmail());
+            throw new ResourceNotFoundException(
+                "No user found with email: " + dto.getEmail());
+        }
+
+        if (!passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
+            logger.warn("Login failed — wrong password for email: {}",
+                dto.getEmail());
+            throw new IllegalArgumentException("Invalid credentials");
+        }
+
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
+        logger.info("Login successful for email: {} with role: {}",
+            user.getEmail(), user.getRole());
+        return token;
+    }
+}
+```
+
+---
+
+### UserController.java — With Logger + Swagger Annotations
+
+```java
+package com.user.service.controller;
+
+import com.user.service.dto.LoginDTO;
+import com.user.service.dto.UserDTO;
+import com.user.service.service.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/users")
+@Tag(name = "User Controller",
+     description = "Endpoints for user registration and login")
+public class UserController {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(UserController.class);
+
+    @Autowired
+    private UserService userService;
+
+    @PostMapping("/register")
+    @Operation(summary = "Register a new user",
+               description = "Registers a DOCTOR or ADMIN user")
+    public ResponseEntity<String> register(
+            @Valid @RequestBody UserDTO dto) {
+        logger.info("POST /api/users/register - request received");
+        return ResponseEntity.ok(userService.register(dto));
+    }
+
+    @PostMapping("/login")
+    @Operation(summary = "Login and get JWT token",
+               description = "Returns a JWT token on successful login")
+    public ResponseEntity<String> login(
+            @Valid @RequestBody LoginDTO dto) {
+        logger.info("POST /api/users/login - request received for: {}",
+            dto.getEmail());
+        return ResponseEntity.ok(userService.login(dto));
+    }
+}
+```
+
+---
+
+### JwtFilter.java — With Logger (Add to Order + Supplier Service too)
+
+```java
+// Add these logger lines inside your existing JwtFilter
+// in Order-Service and Supplier-Service
+
+private static final Logger logger =
+    LoggerFactory.getLogger(JwtFilter.class);
+
+// Inside doFilterInternal — update like this:
+
+if (authHeader != null && authHeader.startsWith("Bearer ")) {
+
+    String token = authHeader.substring(7);
+
+    if (jwtUtil.validateToken(token)) {
+        String email = jwtUtil.getEmailFromToken(token);
+        String role  = jwtUtil.getRoleFromToken(token);
+
+        logger.debug("Valid JWT token for user: {} with role: {}",
+            email, role);
+
+        UsernamePasswordAuthenticationToken authentication =
+            new UsernamePasswordAuthenticationToken(
+                email, null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + role))
+            );
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+    } else {
+        logger.warn("Invalid or expired JWT token received");
+    }
+
+} else {
+    logger.debug("No Bearer token found in request to: {}",
+        request.getRequestURI());
+}
+```
+
+---
+
+# PART 5 — How to Use Swagger UI
+
+## Step 1 — Start your service and open browser
+
+```
+Order-Service    → http://localhost:8081/swagger-ui.html
+Supplier-Service → http://localhost:6683/swagger-ui.html
+User-Service     → http://localhost:8082/swagger-ui.html
+```
+
+## Step 2 — Login first via Swagger
+
+```
+1. Open User-Service Swagger
+2. Find POST /api/users/login
+3. Click "Try it out"
+4. Enter email and password
+5. Click Execute
+6. Copy the token from response
+```
+
+## Step 3 — Authorize in Swagger
+
+```
+1. Click the "Authorize" button (top right of Swagger page)
+2. Paste your token in the value field
+   (Do NOT add Bearer — Swagger adds it automatically)
+3. Click Authorize
+4. Now all endpoints will send the token automatically
+```
+
+---
+
+# Full Summary
+
+| What Added | Where | Purpose |
+|---|---|---|
+| `Logger` | Service, Controller, Filter, Exception | Record every action and error |
+| `SwaggerConfig.java` | config package all 3 services | Setup JWT in Swagger UI |
+| `@Tag` | All Controllers | Name the section in Swagger |
+| `@Operation` | All endpoints | Describe each endpoint |
+| Swagger whitelist | SecurityConfig all services | Allow Swagger without token |
+| Log file | application.properties | Save logs to file |
+
+---
+
+Tell me what to build next — **API Gateway** or anything else!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# AuthService — Full Explanation
+
+## What is AuthService?
+
+AuthService is a **dedicated class or layer** whose only job is to handle **authentication and authorization logic** separately from your UserService.
+
+---
+
+## The Problem Without AuthService
+
+Right now in your project, your UserService is doing too many jobs at once:
+
+```
+UserService is currently doing:
+- Saving user to DB          ← that is USER management
+- Checking duplicate email   ← that is USER management
+- Encoding password          ← that is USER management
+- Matching password on login ← that is AUTHENTICATION
+- Generating JWT token       ← that is AUTHENTICATION
+- Returning token            ← that is AUTHENTICATION
+```
+
+This breaks the **Single Responsibility Principle** which says one class should do only one job.
+
+---
+
+## What AuthService Does
+
+```
+UserService  → ONLY manages user data
+               register, update, delete, get user
+
+AuthService  → ONLY handles authentication
+               login, validate credentials,
+               generate token, refresh token
+```
+
+---
+
+## Visual Difference
+
+### Without AuthService (What you have now)
+```
+UserController
+      ↓
+UserService
+  ├── register()     ← user management ✅
+  ├── login()        ← authentication ⚠️ mixed in
+  └── generateToken  ← jwt logic ⚠️ mixed in
+```
+
+### With AuthService (Clean separation)
+```
+UserController ──► UserService
+                     └── register()    ← only user management
+
+AuthController ──► AuthService
+                     ├── login()       ← only authentication
+                     └── generateToken ← only jwt logic
+```
+
+---
+
+## What AuthService Contains
+
+```
+AuthService does these jobs:
+
+1. login(LoginDTO)
+   → Find user by email
+   → Match password
+   → If correct → call JwtUtil to generate token
+   → Return token
+
+2. validateToken(String token)
+   → Call JwtUtil to validate
+   → Return true or false
+
+3. getLoggedInUser(String token)
+   → Extract email from token
+   → Fetch user from DB
+   → Return user details
+```
+
+---
+
+## What AuthController Contains
+
+```
+AuthController exposes these endpoints:
+
+POST /api/auth/login
+   → Takes email + password
+   → Returns JWT token
+
+GET  /api/auth/validate
+   → Takes token
+   → Returns valid or invalid
+
+GET  /api/auth/me
+   → Takes token
+   → Returns logged in user details
+```
+
+---
+
+## How It Fits Into Your Project
+
+```
+Your Pharmacy Project after adding AuthService:
+
+User-Service
+  ├── UserController   → /api/users/register
+  ├── UserService      → register only
+  │
+  ├── AuthController   → /api/auth/login
+  │                       /api/auth/validate
+  │                       /api/auth/me
+  └── AuthService      → login, validate, getLoggedInUser
+```
+
+---
+
+## How Other Microservices Use AuthService
+
+```
+Currently:
+Order-Service validates JWT locally using its own JwtUtil
+
+Future upgrade possibility:
+Order-Service calls User-Service AuthService
+to validate token centrally
+
+But for your current project:
+Each service validates JWT locally — this is fine
+AuthService just cleans up the User-Service internally
+```
+
+---
+
+## SecurityConfig Connection
+
+```
+Without AuthService:
+SecurityConfig → only blocks/allows endpoints
+
+With AuthService:
+SecurityConfig → uses AuthService to load user details
+                 when Spring Security needs to verify
+                 who is making the request
+
+AuthService implements UserDetailsService
+→ Spring Security calls loadUserByUsername()
+→ AuthService fetches user from DB by email
+→ Spring Security compares passwords internally
+```
+
+---
+
+## UserDetailsService — The Key Interface
+
+This is the most important part of AuthService in Spring Security:
+
+```
+Spring Security has a built-in interface called UserDetailsService
+It has one method: loadUserByUsername(String email)
+
+When you implement this in AuthService:
+→ Spring Security knows how to fetch YOUR users from YOUR DB
+→ It handles the password matching automatically
+→ It sets up the security context properly
+
+Without this:
+→ You manually match passwords in service
+→ Spring Security does not know about your users
+```
+
+---
+
+## Summary Table
+
+| | UserService | AuthService |
+|---|---|---|
+| Register user | ✅ | ❌ |
+| Save to DB | ✅ | ❌ |
+| Login | ❌ | ✅ |
+| Generate JWT | ❌ | ✅ |
+| Validate token | ❌ | ✅ |
+| Load user for Spring Security | ❌ | ✅ |
+| Implements UserDetailsService | ❌ | ✅ |
+
+---
+
+## Should You Add It To Your Project?
+
+```
+YES — because:
+✅ Cleaner code structure
+✅ Single responsibility followed
+✅ Spring Security integrates properly
+✅ Easy to add refresh token later
+✅ Easy to add OAuth or Google login later
+✅ Industry standard pattern
+```
+
+---
+
+Whenever you are ready say **"give me AuthService code"** and I will give the full implementation step by step!
+
+
+
+# AuthService — Full Implementation Step by Step
+
+---
+
+## Updated Package Structure (User-Service)
+
+```
+com.user.service
+  ├── config/
+  │     ├── SecurityConfig.java      ← UPDATED
+  │     └── SwaggerConfig.java
+  ├── controller/
+  │     ├── UserController.java      ← ONLY register now
+  │     └── AuthController.java      ← NEW
+  ├── dto/
+  │     ├── UserDTO.java
+  │     ├── LoginDTO.java
+  │     └── AuthResponseDTO.java     ← NEW
+  ├── exception/
+  │     ├── GlobalExceptionHandler.java
+  │     ├── ResourceNotFoundException.java
+  │     ├── UserAlreadyExistsException.java
+  │     ├── DuplicateNameException.java
+  │     ├── InvalidEmailException.java
+  │     └── InvalidMobileNumberException.java
+  ├── model/
+  │     └── UserModel.java
+  ├── repository/
+  │     └── UserRepo.java
+  ├── service/
+  │     ├── UserService.java         ← ONLY register now
+  │     └── AuthService.java         ← NEW
+  ├── util/
+  │     └── JwtUtil.java
+  └── UserServiceApplication.java
+```
+
+---
+
+## Step 1 — AuthResponseDTO.java
+
+This is the response object returned after successful login. Instead of returning just the token string, you return a clean object with token and user details.
+
+```java
+package com.user.service.dto;
+
+public class AuthResponseDTO {
+
+    private String token;
+    private String email;
+    private String role;
+    private String message;
+
+    // Constructor
+    public AuthResponseDTO(String token, String email,
+                           String role, String message) {
+        this.token   = token;
+        this.email   = email;
+        this.role    = role;
+        this.message = message;
+    }
+
+    // Getters and Setters
+    public String getToken() { return token; }
+    public void setToken(String token) { this.token = token; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+}
+```
+
+---
+
+## Step 2 — AuthService.java
+
+```java
+package com.user.service.service;
+
+import com.user.service.dto.AuthResponseDTO;
+import com.user.service.dto.LoginDTO;
+import com.user.service.exception.ResourceNotFoundException;
+import com.user.service.model.UserModel;
+import com.user.service.repository.UserRepo;
+import com.user.service.util.JwtUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class AuthService implements UserDetailsService {
+    // ↑ Implementing UserDetailsService tells Spring Security
+    //   how to load your users from YOUR database
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(AuthService.class);
+
+    @Autowired
+    private UserRepo userRepo;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
+
+    // ──────────────────────────────────────────────────────────────────
+    // REQUIRED by UserDetailsService
+    // Spring Security calls this automatically when it needs
+    // to verify who is making a request
+    // ──────────────────────────────────────────────────────────────────
+    @Override
+    public UserDetails loadUserByUsername(String email)
+            throws UsernameNotFoundException {
+
+        logger.debug("Loading user by email: {}", email);
+
+        UserModel user = userRepo.findByEmail(email);
+
+        if (user == null) {
+            logger.error("User not found for email: {}", email);
+            throw new UsernameNotFoundException(
+                "User not found with email: " + email);
+        }
+
+        // Return Spring Security's User object with
+        // email, encoded password, and role as authority
+        return new User(
+            user.getEmail(),
+            user.getPassword(),
+            List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole()))
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // LOGIN — validates credentials and returns token + user info
+    // ──────────────────────────────────────────────────────────────────
+    public AuthResponseDTO login(LoginDTO dto) {
+        logger.info("Login attempt for email: {}", dto.getEmail());
+
+        // Step 1 — Find user by email
+        UserModel user = userRepo.findByEmail(dto.getEmail());
+
+        if (user == null) {
+            logger.error("Login failed — user not found: {}", dto.getEmail());
+            throw new ResourceNotFoundException(
+                "No user found with email: " + dto.getEmail());
+        }
+
+        // Step 2 — Match raw password against encoded password in DB
+        if (!passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
+            logger.warn("Login failed — wrong password for: {}", dto.getEmail());
+            throw new IllegalArgumentException("Invalid credentials");
+        }
+
+        // Step 3 — Generate JWT token
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
+
+        logger.info("Login successful for: {} | role: {}",
+            user.getEmail(), user.getRole());
+
+        // Step 4 — Return clean response with token + user info
+        return new AuthResponseDTO(
+            token,
+            user.getEmail(),
+            user.getRole(),
+            "Login successful"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // VALIDATE TOKEN — checks if a token is valid
+    // ──────────────────────────────────────────────────────────────────
+    public boolean validateToken(String token) {
+        logger.debug("Validating token");
+
+        boolean isValid = jwtUtil.validateToken(token);
+
+        if (isValid) {
+            logger.info("Token is valid");
+        } else {
+            logger.warn("Token is invalid or expired");
+        }
+
+        return isValid;
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // GET LOGGED IN USER — extracts user details from token
+    // ──────────────────────────────────────────────────────────────────
+    public UserModel getLoggedInUser(String token) {
+
+        // Remove "Bearer " prefix if present
+        if (token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        logger.debug("Extracting user from token");
+
+        // Extract email from token
+        String email = jwtUtil.getEmailFromToken(token);
+
+        // Fetch user from DB
+        UserModel user = userRepo.findByEmail(email);
+
+        if (user == null) {
+            logger.error("User not found for token email: {}", email);
+            throw new ResourceNotFoundException(
+                "User not found for email: " + email);
+        }
+
+        logger.info("Logged in user fetched: {}", email);
+        return user;
+    }
+}
+```
+
+---
+
+## Step 3 — AuthController.java
+
+```java
+package com.user.service.controller;
+
+import com.user.service.dto.AuthResponseDTO;
+import com.user.service.dto.LoginDTO;
+import com.user.service.model.UserModel;
+import com.user.service.service.AuthService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/auth")
+@Tag(name = "Auth Controller",
+     description = "Endpoints for login, token validation and current user")
+public class AuthController {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(AuthController.class);
+
+    @Autowired
+    private AuthService authService;
+
+    // ── LOGIN ──────────────────────────────────────────────────────────
+    @PostMapping("/login")
+    @Operation(
+        summary = "Login",
+        description = "Validates credentials and returns JWT token with user info"
+    )
+    public ResponseEntity<AuthResponseDTO> login(
+            @Valid @RequestBody LoginDTO dto) {
+
+        logger.info("POST /api/auth/login - request received");
+        AuthResponseDTO response = authService.login(dto);
+        return ResponseEntity.ok(response);
+    }
+
+    // ── VALIDATE TOKEN ─────────────────────────────────────────────────
+    @GetMapping("/validate")
+    @Operation(
+        summary = "Validate Token",
+        description = "Returns whether a given JWT token is valid or expired"
+    )
+    public ResponseEntity<Map<String, Object>> validateToken(
+            @RequestHeader("Authorization") String token) {
+
+        logger.info("GET /api/auth/validate - request received");
+
+        // Remove Bearer prefix
+        if (token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        boolean isValid = authService.validateToken(token);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("valid", isValid);
+        response.put("message", isValid ? "Token is valid" : "Token is invalid or expired");
+
+        return ResponseEntity.ok(response);
+    }
+
+    // ── GET LOGGED IN USER ─────────────────────────────────────────────
+    @GetMapping("/me")
+    @Operation(
+        summary = "Get Current User",
+        description = "Returns the details of the currently logged in user"
+    )
+    public ResponseEntity<Map<String, Object>> getLoggedInUser(
+            @RequestHeader("Authorization") String token) {
+
+        logger.info("GET /api/auth/me - request received");
+
+        UserModel user = authService.getLoggedInUser(token);
+
+        // Return user info but NOT the password
+        Map<String, Object> response = new HashMap<>();
+        response.put("userId",       user.getUserId());
+        response.put("name",         user.getName());
+        response.put("email",        user.getEmail());
+        response.put("role",         user.getRole());
+        response.put("mobileNumber", user.getMobileNumber());
+
+        return ResponseEntity.ok(response);
+    }
+}
+```
+
+---
+
+## Step 4 — UserService.java (Cleaned — Only Register Now)
+
+```java
+package com.user.service.service;
+
+import com.user.service.dto.UserDTO;
+import com.user.service.exception.DuplicateNameException;
+import com.user.service.exception.UserAlreadyExistsException;
+import com.user.service.model.UserModel;
+import com.user.service.repository.UserRepo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(UserService.class);
+
+    @Autowired
+    private UserRepo userRepo;
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
+
+    // ── REGISTER ────────────────────────────────────────────────────────
+    // UserService now ONLY handles registration
+    // Login is handled by AuthService
+    public String register(UserDTO dto) {
+        logger.info("Register request for email: {}", dto.getEmail());
+
+        // Check duplicate email
+        if (userRepo.existsByEmail(dto.getEmail())) {
+            logger.warn("Duplicate email: {}", dto.getEmail());
+            throw new UserAlreadyExistsException(
+                "User already exists with email: " + dto.getEmail());
+        }
+
+        // Check duplicate name
+        if (userRepo.existsByName(dto.getName())) {
+            logger.warn("Duplicate name: {}", dto.getName());
+            throw new DuplicateNameException(
+                "User already exists with name: " + dto.getName());
+        }
+
+        UserModel user = new UserModel();
+        user.setName(dto.getName());
+        user.setEmail(dto.getEmail());
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setMobileNumber(dto.getMobileNumber());
+        user.setRole(dto.getRole());
+
+        userRepo.save(user);
+        logger.info("User registered successfully: {}", dto.getEmail());
+        return "User registered successfully";
+    }
+}
+```
+
+---
+
+## Step 5 — UserController.java (Cleaned — Only Register Now)
+
+```java
+package com.user.service.controller;
+
+import com.user.service.dto.UserDTO;
+import com.user.service.service.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/users")
+@Tag(name = "User Controller",
+     description = "Endpoint for user registration only")
+public class UserController {
+
+    private static final Logger logger =
+        LoggerFactory.getLogger(UserController.class);
+
+    @Autowired
+    private UserService userService;
+
+    // ── REGISTER ────────────────────────────────────────────────────────
+    @PostMapping("/register")
+    @Operation(
+        summary = "Register a new user",
+        description = "Registers a new DOCTOR or ADMIN user"
+    )
+    public ResponseEntity<String> register(
+            @Valid @RequestBody UserDTO dto) {
+
+        logger.info("POST /api/users/register - request received");
+        return ResponseEntity.ok(userService.register(dto));
+    }
+}
+```
+
+---
+
+## Step 6 — SecurityConfig.java (Updated — Wired to AuthService)
+
+```java
+package com.user.service.config;
+
+import com.user.service.service.AuthService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Autowired
+    private AuthService authService;
+    // ↑ AuthService implements UserDetailsService
+    //   so Spring Security uses it to load users
+
+    // ── BCrypt Bean ────────────────────────────────────────────────────
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    // ── DaoAuthenticationProvider ──────────────────────────────────────
+    // Connects AuthService + BCrypt to Spring Security
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(authService); // use our AuthService
+        provider.setPasswordEncoder(passwordEncoder()); // use BCrypt
+        return provider;
+    }
+
+    // ── AuthenticationManager Bean ─────────────────────────────────────
+    @Bean
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration config) throws Exception {
+        return config.getAuthenticationManager();
+    }
+
+    // ── Security Filter Chain ──────────────────────────────────────────
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable())
+
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+            .authenticationProvider(authenticationProvider())
+
+            .authorizeHttpRequests(auth -> auth
+
+                // Open endpoints — no token needed
+                .requestMatchers(
+                    "/api/users/register",
+                    "/api/auth/login",
+                    "/swagger-ui.html",
+                    "/swagger-ui/**",
+                    "/api-docs/**",
+                    "/v3/api-docs/**"
+                ).permitAll()
+
+                // All other endpoints need token
+                .anyRequest().authenticated()
+            );
+
+        return http.build();
+    }
+}
+```
+
+---
+
+## How to Test in Postman / Swagger
+
+### Register
+```
+POST http://localhost:8082/api/users/register
+Body:
+{
+  "name": "John Doctor",
+  "email": "john@gmail.com",
+  "password": "pass1234",
+  "mobileNumber": "9876543210",
+  "role": "DOCTOR"
+}
+
+Response:
+"User registered successfully"
+```
+
+### Login
+```
+POST http://localhost:8082/api/auth/login
+Body:
+{
+  "email": "john@gmail.com",
+  "password": "pass1234"
+}
+
+Response:
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9...",
+  "email": "john@gmail.com",
+  "role": "DOCTOR",
+  "message": "Login successful"
+}
+```
+
+### Validate Token
+```
+GET http://localhost:8082/api/auth/validate
+Header:
+  Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+
+Response:
+{
+  "valid": true,
+  "message": "Token is valid"
+}
+```
+
+### Get Current User
+```
+GET http://localhost:8082/api/auth/me
+Header:
+  Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+
+Response:
+{
+  "userId": 1,
+  "name": "John Doctor",
+  "email": "john@gmail.com",
+  "role": "DOCTOR",
+  "mobileNumber": "9876543210"
+}
+```
+
+---
+
+## Full Responsibility Split — Final Picture
+
+```
+UserController  → POST /api/users/register
+UserService     → register() only
+
+AuthController  → POST /api/auth/login
+                  GET  /api/auth/validate
+                  GET  /api/auth/me
+AuthService     → login()
+                  validateToken()
+                  getLoggedInUser()
+                  loadUserByUsername() ← for Spring Security
+```
+
+---
+
+## Summary of All New Files Added
+
+| File | Package | Purpose |
+|---|---|---|
+| `AuthService.java` | service | Login, validate, get user, UserDetailsService |
+| `AuthController.java` | controller | Exposes /api/auth endpoints |
+| `AuthResponseDTO.java` | dto | Clean login response with token + info |
+| `SecurityConfig.java` | config | Updated to wire AuthService into Spring Security |
+| `UserService.java` | service | Cleaned — register only |
+| `UserController.java` | controller | Cleaned — register only |
+
+---
+
+Tell me what to build next — **API Gateway** or anything else!
+
+
+
+
+# Stateless Service — Full Explanation
+
+## What is Stateless?
+
+Stateless means the **server does not remember anything about you between requests**. Every single request must carry all the information the server needs to process it. The server treats every request as if it has never seen you before.
+
+---
+
+## Simple Real Life Analogy
+
+```
+STATEFUL — Like a regular doctor's clinic:
+You visit the doctor
+Doctor remembers you from last time
+Doctor says "oh yes, you had fever last week"
+Server is keeping memory of you
+
+STATELESS — Like a token counter at a government office:
+You take a token
+Token has all your details printed on it
+Every counter you go to reads your token
+No counter remembers you personally
+You must carry your token everywhere
+```
+
+---
+
+## Stateful vs Stateless — Direct Comparison
+
+```
+STATEFUL SERVER:
+User logs in
+→ Server creates a SESSION and stores it in memory
+→ Server gives user a Session ID (like a locker key)
+→ User sends Session ID with every request
+→ Server looks up the session from its memory
+→ Server remembers who you are
+
+Problem:
+- Server memory fills up with sessions
+- If server restarts → all sessions lost → everyone logged out
+- Cannot scale to multiple servers easily
+  (Server 2 does not have Server 1's sessions)
+
+
+STATELESS SERVER:
+User logs in
+→ Server creates a JWT TOKEN with user info baked inside
+→ Server gives user the token
+→ Server forgets everything immediately
+→ User sends token with every request
+→ Server reads the token itself → no memory needed
+→ Server knows who you are from the token alone
+
+Benefits:
+- Server memory is free
+- Server restart → no problem, tokens still work
+- Can scale to 100 servers easily
+  (every server can read the same token)
+```
+
+---
+
+## How Your Project is Stateless
+
+In your pharmacy project you already configured this in every SecurityConfig:
+
+```java
+.sessionManagement(session ->
+    session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+```
+
+This one line tells Spring:
+```
+"Do NOT create any HTTP sessions"
+"Do NOT store anything about users in server memory"
+"Every request must prove who they are by itself"
+"That proof is the JWT token"
+```
+
+---
+
+## What Happens Request by Request
+
+```
+REQUEST 1 — Login:
+Client  → POST /api/auth/login { email, password }
+Server  → checks DB, generates JWT token
+Server  → sends token back
+Server  → FORGETS EVERYTHING about this user immediately
+
+REQUEST 2 — Create Order:
+Client  → POST /api/orders { drugList... }
+          + Header: Authorization: Bearer eyJhbGci...
+Server  → reads the token from header
+Server  → decodes token → finds email and role inside
+Server  → processes the request
+Server  → FORGETS EVERYTHING again
+
+REQUEST 3 — Get Order:
+Client  → GET /api/orders/5
+          + Header: Authorization: Bearer eyJhbGci...
+Server  → reads the token again
+Server  → same process
+Server  → FORGETS EVERYTHING again
+```
+
+---
+
+## The Token IS the State
+
+```
+In stateful:   State lives on the SERVER (session memory)
+In stateless:  State lives in the TOKEN (on the client side)
+
+Your JWT token carries:
+{
+  "sub": "john@gmail.com",   ← who you are
+  "role": "DOCTOR",          ← what you can do
+  "iat": 1700000000,         ← when token was issued
+  "exp": 1700086400          ← when token expires
+}
+
+The server does not need to remember you
+because all necessary info is inside the token itself
+```
+
+---
+
+## Why Stateless is Perfect for Microservices
+
+```
+Your pharmacy project has 3 microservices:
+
+Order-Service    (port 8081)
+Supplier-Service (port 6683)
+User-Service     (port 8082)
+
+If stateful:
+→ User logs in to User-Service
+→ Session stored in User-Service memory
+→ User makes request to Order-Service
+→ Order-Service has NO session → user appears logged out
+→ You would need to share sessions between all services
+→ Very complex and fragile
+
+If stateless (what you have):
+→ User logs in to User-Service → gets JWT token
+→ User sends token to Order-Service
+→ Order-Service reads the token locally → knows who user is
+→ No sharing needed between services
+→ Simple and scalable
+```
+
+---
+
+## Stateless Advantages for Your Project
+
+```
+✅ No session storage needed in any microservice
+✅ Any microservice can validate any token independently
+✅ Server restart does not log out users
+✅ Can run multiple instances of each service
+✅ Better performance — no session lookup in DB or memory
+✅ Scales horizontally without complexity
+```
+
+---
+
+## Stateless Disadvantages
+
+```
+❌ Cannot invalidate a token before it expires
+   (if user logs out, token still works until expiry)
+   Solution → use short expiry times + refresh tokens
+
+❌ Token gets bigger as you add more claims to it
+   (every request carries the full token)
+
+❌ If secret key is stolen → all tokens are compromised
+   Solution → keep secret key safe in environment variables
+```
+
+---
+
+## How Logout Works in Stateless
+
+This is a common question — if server forgets everything, how do you log out?
+
+```
+Option 1 — Client deletes the token
+The client simply deletes the token from storage
+Server never knew about it anyway
+Weakness: if someone else copied the token it still works
+
+Option 2 — Token Blacklist (common solution)
+Keep a small DB table of invalidated tokens
+On logout → add token to blacklist
+On every request → check if token is blacklisted
+Weakness: adds a DB check to every request
+
+Option 3 — Short expiry + Refresh Token (best practice)
+Access token expires in 15 minutes
+Refresh token expires in 7 days
+On logout → invalidate refresh token only
+Access token auto-expires in 15 minutes anyway
+```
+
+---
+
+## Summary Table
+
+| Topic | Stateful | Stateless |
+|---|---|---|
+| Server memory | Stores sessions | Stores nothing |
+| User identity | Session ID | JWT Token |
+| Server restart | Logs everyone out | No effect |
+| Scaling | Complex | Easy |
+| Microservices | Hard to share sessions | Each service reads token independently |
+| Your project | ❌ Not used | ✅ Used via JWT |
+| Spring config | SessionCreationPolicy.IF_REQUIRED | SessionCreationPolicy.STATELESS |
+
+---
+
+## One Line Summary
+
+```
+Stateless = Server remembers nothing.
+            Client carries everything in the JWT token.
+            Every request is self-contained and complete by itself.
+```
+
+---
+
+Tell me what to build next — **API Gateway**, **Refresh Token**, or anything else!
